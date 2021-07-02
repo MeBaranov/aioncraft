@@ -1,21 +1,20 @@
 package database
 
-const {
-	Elyos = 0,
-	Asmodian = 1,
+import (
+	"github.com/mebaranov/aioncraft/utility"
+)
+
+type Item struct {
+	Name  string
+	ID    string
+	Price *utility.TheInt
 }
 
-type Item Struct {
-	Name string,
-	ID string,
-	Price *utility.TheInt,
-}
-
-type Recipe Struct {
-	Name string,
-	ID string,
-	ItemID string,
-	Level int,
-	Count int,
-	Items map[string]int,
+type Recipe struct {
+	Name   string
+	ID     string
+	ItemID string
+	Level  int
+	Count  int
+	Items  map[string]int
 }

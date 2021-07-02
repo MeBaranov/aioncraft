@@ -1,28 +1,39 @@
 package scrapper
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/mebaranov/aioncraft/database"
+)
 
 type recipes struct {
-	aaData [][]string `json:"aaData"`
+	AaData [][]string `json:"aaData"`
 }
 
 type Scrapper struct {
-	nameRegex *Regexp
+	nameRegex        *regexp.Regexp
+	itemIDCountRegex *regexp.Regexp
+	itemNameRegex    *regexp.Regexp
 }
 
 func New() *Scrapper {
 	return &Scrapper{
-		nameRegex = regexp.MustCompile(`<b>(.*?)</b>`),
-		itemIDCountRegex = regexp.MustCompile(`/usc/item/(.*?)/.*?<div class=\\"quantity.*?>(\d+)</div>`),
+		nameRegex:        regexp.MustCompile(`<b>(.*?)</b>`),
+		itemIDCountRegex: regexp.MustCompile(`(?s)/usc/item/(.*?)/.*?<div class=\\?"quantity.*?>(\d+)</div>`),
+		itemNameRegex:    regexp.MustCompile(`\<span class="item_title.*?" id="item_name"\>\s*<b>(.*?)</b>`),
 	}
 }
 
-func (s *Scrapper) Scrap(json string, eElyon map[string]*database.Entity, rElyon map[string]*database.Recipe, eAsmodian map[string]*database.Entity, rAsmodian map[string]*database.Recipe) {
+func (s *Scrapper) Scrap(in []byte, eElyon map[string]*database.Item, rElyon map[string]*database.Recipe, eAsmodian map[string]*database.Item, rAsmodian map[string]*database.Recipe) {
 	data := &recipes{}
-	json.Unmarshal([]byte(json), data)
+	json.Unmarshal(in, data)
 
-	for _, item := range data.aaData {
-		if strings.contain(item[2], "race-light") {
+	for _, item := range data.AaData {
+		if strings.Contains(item[2], "race-light") {
 			s.addRecipe(item, eElyon, rElyon)
 		} else {
 			s.addRecipe(item, eAsmodian, rAsmodian)
@@ -30,80 +41,110 @@ func (s *Scrapper) Scrap(json string, eElyon map[string]*database.Entity, rElyon
 	}
 }
 
-func (s *Scrapper) addRecipe(item string[], e map[string]*database.Entity, r map[string]*database.Recipe) {
+func (s *Scrapper) addRecipe(item []string, e map[string]*database.Item, r map[string]*database.Recipe) {
 	id := item[0]
 	if _, ok := r[id]; ok {
 		fmt.Printf("Error: Recipe with this ID is already present: %v\n", id)
 		return
 	}
 
-	add := &database.Recipe{ ID: id }
+	var err error
 
-	add.Level, err := strconv.Atoi(item[3])
+	add := &database.Recipe{ID: id}
+
+	add.Level, err = strconv.Atoi(item[3])
 	if err != nil {
 		fmt.Printf("Could not convert required level (%v): %v\n", item[3], item)
 		return
 	}
 
-	add.Name = s.nameRegex.FindStringSubmtach(item[2])[0]
+	add.Name = s.nameRegex.FindStringSubmatch(item[2])[1]
 	if add.Name == "" {
 		fmt.Printf("Could not figure the name: %v\n", item)
 		return
 	}
-	
-	idAndCount := s.temIDRegex.FindStringSubmtach(item[5])
-	if len(idAndCount) != 2) {
-		fmt.Printf("Could not figure the item ID: %v\n", item)
-		return
-	}
 
+	idAndCount := s.itemIDCountRegex.FindStringSubmatch(item[5])
 	add.ItemID, add.Count, err = s.getIDAndCount(idAndCount)
-	if err != nil 
-		fmt.Printf("%v: %v\n", err, item)
+	if err != nil {
+		fmt.Printf("Error at base recipe. %v: %v\n", err, item[5])
 		return
 	}
 
-	elements := s.itemIDRegex.FindAllStringSubmatch(item[4])
+	elements := s.itemIDCountRegex.FindAllStringSubmatch(item[4], -1)
 	if elements == nil {
 		fmt.Printf("Could not figure recipe parts: %v\n", item)
 		return
 	}
 
+	add.Items = make(map[string]int)
 	for _, elem := range elements {
 		id, count, err := s.getIDAndCount(elem)
 		if err != nil {
-			fmt.Printf("%v: %v\n", err, item)
+			fmt.Printf("Error at elements. %v: %v\n", err, item[4])
 		}
 
-		if  _, ok := e[id]; !ok {
-			e[id] = &database.Entity {
+		if _, ok := e[id]; !ok {
+			e[id] = &database.Item{
 				ID: id,
 			}
 		}
 
 		if _, ok := add.Items[id]; ok {
-			fmt.Printf("Duplicating item in the recipe (%v): %v", id, item)
+			fmt.Printf("Duplicating item in the recipe (%v): %v", id, item[4])
 			continue
 		}
 		add.Items[id] = count
 	}
 
-	if ent, ok := e[add.ID]; !ok {
-		e[add.ID] = &database.Entity {
-			ID: add.ID,
+	if _, ok := e[add.ItemID]; !ok {
+		e[add.ItemID] = &database.Item{
+			ID: add.ItemID,
+		}
+	}
+
+	r[id] = add
+	add.Name = strings.Replace(add.Name, "&#39;", "'", -1)
+	if add.ID == "169405168" {
+		fmt.Printf("Added recipe. %v (%v, %v). Items count: %v, level: %v\n", add.Name, add.ID, add.ItemID, len(add.Items), add.Level)
+	}
+}
+
+const addressFmt = "https://aioncodex.com/usc/item/%s/"
+
+func (s *Scrapper) Name(items map[string]*database.Item) {
+	req := NewRequester()
+	for id, item := range items {
+		if item.Name == "" {
+			data, err := req.GetData(fmt.Sprintf(addressFmt, id))
+			if err != nil {
+				fmt.Printf("Could not load item data (%v). Error: %v", id, err)
+				continue
+			}
+
+			strData := string(data)
+			tmp := s.itemNameRegex.FindStringSubmatch(strData)
+			if len(tmp) != 2 {
+				fmt.Printf("Wrong amount of sections in name (%v). %v\n", id, tmp)
+				continue
+			}
+
+			item.Name = tmp[1]
+			item.Name = strings.Replace(item.Name, "&#39;", "'", -1)
+			fmt.Printf("Assigned name (%v) to an item (%v).\n", item.Name, id)
 		}
 	}
 }
 
-func (s *Scrapper) getIDAndCount(item string[]) (string, int, error) {
-	if len(item) != 2 {
+func (s *Scrapper) getIDAndCount(item []string) (string, int, error) {
+	if len(item) != 3 {
 		return "", 0, fmt.Errorf("Unexpected elements count (%v)", item)
 	}
 
-	count, err := string.Atoi(item[1])
-	if err != nil 
-		return "", 0, fmt.Errof("Could not parse the count (%v)", item)
+	count, err := strconv.Atoi(item[2])
+	if err != nil {
+		return "", 0, fmt.Errorf("Could not parse the count (%v)", item)
 	}
 
-	return item[0], count, nil
+	return item[1], count, nil
 }
