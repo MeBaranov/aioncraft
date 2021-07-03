@@ -69,14 +69,20 @@ func (p *Processor) Set(cmd Command) string {
 	return fmt.Sprintf("Item (%v) was not found.", cmd.Item)
 }
 
+type helpStruct struct {
+	str   string
+	layer int
+}
+
 func (p *Processor) Price(cmd Command) string {
 	items := p.db.Items[cmd.Race]
 	rv := ""
-	regEx := regexp.MustCompile(cmd.Item)
-	naReasons := &utility.TheInt{Value: 0, NAReasons: []string{}}
+	regEx := regexp.MustCompile(strings.ToLower(cmd.Item))
+	naReasons := map[string]bool{}
+	rvs := []*helpStruct{}
 
 	for _, item := range items {
-		if regEx.MatchString(item.Name) {
+		if regEx.MatchString(strings.ToLower(item.Name)) {
 			for ct, name := range CraftTypeToName {
 				rec := p.db.RecipeByItem(cmd.Race, ct, item.ID)
 				if rec == nil {
@@ -84,20 +90,35 @@ func (p *Processor) Price(cmd Command) string {
 				}
 				price := p.priceByRecipe(cmd.Race, ct, rec.ID)
 
-				rv += fmt.Sprintf("Type: %v (Level %v), Item: %v (%v), Price: %v", name, rec.Level, item.Name, item.ID, price.Value)
+				tmpstr := fmt.Sprintf("Type: %v (Level %v), Item: %v (%v), Price: %v", name, rec.Level, item.Name, item.ID, price.Value)
 				if len(price.NAReasons) > 0 {
-					rv += " + <N/A>."
-					naReasons = naReasons.Plus(price)
+					tmpstr += " + <N/A>."
+					for _, na := range price.NAReasons {
+						naReasons[na] = true
+					}
 				}
-				rv += "\n"
+				tmpstr += "\n"
+				rvs = append(rvs, &helpStruct{tmpstr, rec.Level})
 			}
 		}
 	}
 
-	if rv == "" {
+	if len(rvs) == 0 {
 		rv = fmt.Sprintf("No items found following expression: \"%v\"", cmd.Item)
-	} else if len(naReasons.NAReasons) != 0 {
-		rv += "\n\nYou can improve estimation quality and get rid of <N/A>'s by adding the following prices:\n" + strings.Join(naReasons.NAReasons, ", ") + "\n"
+	} else {
+		sort.SliceStable(rvs, func(i, j int) bool {
+			return rvs[i].layer < rvs[j].layer
+		})
+		for _, s := range rvs {
+			rv += s.str
+		}
+		if len(naReasons) != 0 {
+			rv += "\n\nYou can improve estimation quality and get rid of <N/A>'s by adding the following prices:\n"
+			for i := range naReasons {
+				rv += i + ","
+			}
+			rv += "\n"
+		}
 	}
 	return rv
 }
@@ -107,7 +128,7 @@ func (p *Processor) Help(cmd Command) string {
 	rv := ""
 
 	for _, item := range items {
-		if item.Name == cmd.Item {
+		if strings.ToLower(item.Name) == strings.ToLower(cmd.Item) {
 			for ct, name := range CraftTypeToName {
 				rec := p.db.RecipeByItem(cmd.Race, ct, item.ID)
 				if rec == nil {
@@ -132,37 +153,46 @@ type itemAndCount struct {
 	layer int
 }
 
-func (p *Processor) gatherIngridients(race database.Race, ct database.CraftType, recId string) string {
+type queueItem struct {
+	id  string
+	mul int
+}
 
-	rec := p.db.Recipes[race][ct][recId]
+func (p *Processor) gatherIngridients(race database.Race, ct database.CraftType, inRecId string) string {
+
+	rec := p.db.Recipes[race][ct][inRecId]
 	item := p.db.Items[race][rec.ItemID]
-	queue := []string{recId}
-	baseItems := []*itemAndCount{}
+	queue := []*queueItem{{inRecId, 1}}
+	baseItems := map[string]*itemAndCount{}
 	crafts := map[string]*itemAndCount{
 		item.ID: {item.Name, 1, 0},
 	}
 
 	layer := 0
 	for len(queue) > 0 {
-		recId = queue[0]
+		theRec := queue[0]
 		queue = queue[1:]
-		rec = p.db.Recipes[race][ct][recId]
+		rec = p.db.Recipes[race][ct][theRec.id]
 
 		for id, count := range rec.Items {
 			subRec := p.db.RecipeByItem(race, ct, id)
 			if subRec == nil {
-				baseItems = append(baseItems, &itemAndCount{p.db.Items[race][id].Name, count, -1})
+				if c, ok := baseItems[id]; ok {
+					c.count += count * theRec.mul
+				} else {
+					baseItems[id] = &itemAndCount{p.db.Items[race][id].Name, count * theRec.mul, -1}
+				}
 			} else {
 				if c, ok := crafts[id]; ok {
-					c.count += count
+					c.count += count * theRec.mul
 				} else {
 					layer += 1
 					crafts[id] = &itemAndCount{
 						name:  p.db.Items[race][id].Name,
-						count: count,
+						count: count * theRec.mul,
 						layer: layer,
 					}
-					queue = append(queue, subRec.ID)
+					queue = append(queue, &queueItem{subRec.ID, count * theRec.mul})
 				}
 			}
 		}
@@ -174,7 +204,7 @@ func (p *Processor) gatherIngridients(race database.Race, ct database.CraftType,
 	}
 
 	sort.SliceStable(layers, func(i int, j int) bool {
-		return layers[i].layer < layers[j].layer
+		return layers[i].layer > layers[j].layer
 	})
 
 	rv := "First you buy: "
