@@ -5,7 +5,7 @@ type TheInt struct {
 	NAReasons []string
 }
 
-func New(a int, name string) *TheInt {
+func NewInt(a int, name string) *TheInt {
 	return &TheInt{
 		Value:     a,
 		NAReasons: []string{name},

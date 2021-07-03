@@ -11,24 +11,11 @@ import (
 )
 
 type CLI struct {
-	close chan bool
-	cmd   chan Command
-	out   chan string
-
 	race           database.Race
 	isRaceSelected bool
 }
 
-func New(close chan bool, cmd chan Command, out chan string) *CLI {
-	return &CLI{
-		close:          close,
-		cmd:            cmd,
-		out:            out,
-		isRaceSelected: false,
-	}
-}
-
-func (c *CLI) Start() {
+func (c *CLI) Start(cmdc chan Command, outc chan string) {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Println("Let's begin")
 	fmt.Println("------")
@@ -39,9 +26,15 @@ func (c *CLI) Start() {
 			fmt.Printf("Some error reading input: %v", err)
 			continue
 		}
+		cmd = strings.Trim(cmd, "\n\r ")
 		if cmd == "quit" {
-			c.close <- true
-			return
+			cmdc <- Command{
+				Action: Close,
+				Race:   c.race,
+				Out:    outc,
+			}
+			fmt.Println(<-outc)
+			continue
 		}
 
 		cmdArr := strings.Split(cmd, ":")
@@ -53,14 +46,14 @@ func (c *CLI) Start() {
 			}
 
 			switch strings.ToLower(cmdArr[1]) {
-			case "elyos":
-			case "1":
+			case "1", "elyos":
 				c.race = database.Elyos
 				c.isRaceSelected = true
-			case "":
-			case "2":
+				fmt.Println("Race is set to Elyos")
+			case "2", "asmodian":
 				c.race = database.Asmodian
 				c.isRaceSelected = true
+				fmt.Println("Race is set to Asmodian")
 			default:
 				fmt.Println("Wrong race")
 			}
@@ -80,12 +73,14 @@ func (c *CLI) Start() {
 				continue
 			}
 
-			c.cmd <- Command{
+			cmdc <- Command{
 				Action: Set,
+				Race:   c.race,
 				Item:   cmdArr[1],
 				Price:  price,
+				Out:    outc,
 			}
-			fmt.Println(<-c.out)
+			fmt.Println(<-outc)
 		case "price":
 			if !c.isRaceSelected {
 				fmt.Println("Select the race first")
@@ -96,11 +91,13 @@ func (c *CLI) Start() {
 				continue
 			}
 
-			c.cmd <- Command{
+			cmdc <- Command{
 				Action: Price,
+				Race:   c.race,
 				Item:   cmdArr[1],
+				Out:    outc,
 			}
-			fmt.Println(<-c.out)
+			fmt.Println(<-outc)
 		case "help":
 			if !c.isRaceSelected {
 				fmt.Println("Select the race first")
@@ -111,11 +108,15 @@ func (c *CLI) Start() {
 				continue
 			}
 
-			c.cmd <- Command{
+			cmdc <- Command{
 				Action: Help,
+				Race:   c.race,
 				Item:   cmdArr[1],
+				Out:    outc,
 			}
-			fmt.Println(<-c.out)
+			fmt.Println(<-outc)
+		default:
+			fmt.Printf("Command \"%v\" is not known\n", cmd)
 		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mebaranov/aioncraft/database"
+	"github.com/mebaranov/aioncraft/utility"
 )
 
 type recipes struct {
@@ -105,9 +106,7 @@ func (s *Scrapper) addRecipe(item []string, e map[string]*database.Item, r map[s
 
 	r[id] = add
 	add.Name = strings.Replace(add.Name, "&#39;", "'", -1)
-	if add.ID == "169405168" {
-		fmt.Printf("Added recipe. %v (%v, %v). Items count: %v, level: %v\n", add.Name, add.ID, add.ItemID, len(add.Items), add.Level)
-	}
+	// fmt.Printf("Added recipe. %v (%v, %v). Items count: %v, level: %v\n", add.Name, add.ID, add.ItemID, len(add.Items), add.Level)
 }
 
 const addressFmt = "https://aioncodex.com/usc/item/%s/"
@@ -131,8 +130,9 @@ func (s *Scrapper) Name(items map[string]*database.Item) {
 
 			item.Name = tmp[1]
 			item.Name = strings.Replace(item.Name, "&#39;", "'", -1)
-			fmt.Printf("Assigned name (%v) to an item (%v).\n", item.Name, id)
+			// fmt.Printf("Assigned name (%v) to an item (%v).\n", item.Name, id)
 		}
+		item.Price = utility.NewInt(0, item.Name)
 	}
 }
 

@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"time"
 
 	"github.com/mebaranov/aioncraft/database"
+	"github.com/mebaranov/aioncraft/input"
 	"github.com/mebaranov/aioncraft/scrapper"
 )
 
@@ -21,8 +23,9 @@ var paths = map[database.CraftType]string{
 var dbPath = "data/database.json"
 
 type MainStr struct {
-	db    *database.Database
-	scrap *scrapper.Scrapper
+	db        *database.Database
+	scrap     *scrapper.Scrapper
+	processor *input.Processor
 }
 
 func main() {
@@ -44,6 +47,10 @@ func main() {
 
 		m.SaveDatabase()
 	}
+
+	m.processor = input.NewProcessor(m.db)
+	go m.Saver()
+	m.processor.Work([]input.InputController{&input.CLI{}})
 }
 
 func (m *MainStr) InitDatabase() error {
@@ -97,4 +104,14 @@ func (m *MainStr) SaveDatabase() error {
 	}
 
 	return nil
+}
+
+func (m *MainStr) Saver() {
+	for {
+		if m.db.SaveNeeded {
+			m.db.SaveNeeded = false
+			m.SaveDatabase()
+		}
+		time.Sleep(time.Second * 30)
+	}
 }

@@ -44,9 +44,10 @@ var Crafts = []CraftType{
 }
 
 type Database struct {
-	Recipes  map[Race]map[CraftType]map[string]*Recipe
-	Items    map[Race]map[string]*Item
-	CurState State
+	Recipes    map[Race]map[CraftType]map[string]*Recipe
+	Items      map[Race]map[string]*Item
+	CurState   State
+	SaveNeeded bool
 }
 
 func New() *Database {
@@ -71,10 +72,23 @@ func New() *Database {
 func NewFromJson(in []byte) (*Database, error) {
 	rv := &Database{}
 	err := json.Unmarshal(in, rv)
+	rv.SaveNeeded = false
 
 	return rv, err
 }
 
 func (d *Database) Save() ([]byte, error) {
+	d.SaveNeeded = false
 	return json.Marshal(d)
+}
+
+func (d *Database) RecipeByItem(race Race, ct CraftType, itemId string) *Recipe {
+	recipes := d.Recipes[race][ct]
+	for _, r := range recipes {
+		if r.ItemID == itemId && r.Count == 1 {
+			return r
+		}
+	}
+
+	return nil
 }
