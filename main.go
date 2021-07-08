@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -21,14 +22,24 @@ var paths = map[database.CraftType]string{
 }
 
 var dbPath = "data/database.json"
+var discPath = "data/discord.json"
 
 type MainStr struct {
 	db        *database.Database
 	scrap     *scrapper.Scrapper
 	processor *input.Processor
+	discInp   *input.Discord
 }
 
 func main() {
+	var (
+		discToken string
+		cli       bool
+	)
+
+	flag.StringVar(&discToken, "t", "", "Bot token")
+	flag.BoolVar(&cli, "cli", false, "Use CLI")
+
 	m := &MainStr{
 		scrap: scrapper.New(),
 	}
@@ -50,7 +61,16 @@ func main() {
 
 	m.processor = input.NewProcessor(m.db)
 	go m.Saver()
-	m.processor.Work([]input.InputController{&input.CLI{}})
+
+	controllers := []input.InputController{}
+	if cli {
+		controllers = append(controllers, &input.CLI{})
+	}
+	if discToken != "" {
+		m.discInp = input.NewDiscord(discToken)
+		controllers = append(controllers, m.discInp)
+	}
+	m.processor.Work(controllers)
 }
 
 func (m *MainStr) InitDatabase() error {
@@ -106,11 +126,29 @@ func (m *MainStr) SaveDatabase() error {
 	return nil
 }
 
+func (m *MainStr) SaveDiscord() error {
+	data, err := m.db.Save()
+	if err != nil {
+		return fmt.Errorf("Could not marshal DB. Error: %v", err)
+	}
+
+	err = ioutil.WriteFile(dbPath, data, 0777)
+	if err != nil {
+		return fmt.Errorf("Could not save DB file. Error: %v", err)
+	}
+
+	return nil
+}
+
 func (m *MainStr) Saver() {
 	for {
 		if m.db.SaveNeeded {
 			m.db.SaveNeeded = false
 			m.SaveDatabase()
+		}
+		if m.discInp != nil && m.discInp.SaveNeeded {
+			m.discInp.SaveNeeded = false
+			m.SaveDiscord()
 		}
 		time.Sleep(time.Second * 30)
 	}

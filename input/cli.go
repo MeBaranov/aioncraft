@@ -98,7 +98,7 @@ func (c *CLI) Start(cmdc chan Command, outc chan string) {
 				Out:    outc,
 			}
 			fmt.Println(<-outc)
-		case "help":
+		case "how":
 			if !c.isRaceSelected {
 				fmt.Println("Select the race first")
 				continue

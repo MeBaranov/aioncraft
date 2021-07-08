@@ -151,6 +151,7 @@ type itemAndCount struct {
 	name  string
 	count int
 	layer int
+	price *utility.TheInt
 }
 
 type queueItem struct {
@@ -165,7 +166,7 @@ func (p *Processor) gatherIngridients(race database.Race, ct database.CraftType,
 	queue := []*queueItem{{inRecId, 1}}
 	baseItems := map[string]*itemAndCount{}
 	crafts := map[string]*itemAndCount{
-		item.ID: {item.Name, 1, 0},
+		item.ID: {item.Name, 1, 0, nil},
 	}
 
 	layer := 0
@@ -180,13 +181,15 @@ func (p *Processor) gatherIngridients(race database.Race, ct database.CraftType,
 				if c, ok := baseItems[id]; ok {
 					c.count += count * theRec.mul
 				} else {
-					baseItems[id] = &itemAndCount{p.db.Items[race][id].Name, count * theRec.mul, -1}
+					theItem := p.db.Items[race][id]
+					baseItems[id] = &itemAndCount{theItem.Name, count * theRec.mul, -1, theItem.Price}
 				}
 			} else {
+				layer += 1
 				if c, ok := crafts[id]; ok {
+					c.layer = layer
 					c.count += count * theRec.mul
 				} else {
-					layer += 1
 					crafts[id] = &itemAndCount{
 						name:  p.db.Items[race][id].Name,
 						count: count * theRec.mul,
@@ -209,7 +212,11 @@ func (p *Processor) gatherIngridients(race database.Race, ct database.CraftType,
 
 	rv := "First you buy: "
 	for _, it := range baseItems {
-		rv += fmt.Sprintf("%v (%v), ", it.name, it.count)
+		prc := "N/A"
+		if len(it.price.NAReasons) == 0 {
+			prc = fmt.Sprint(it.price.Value)
+		}
+		rv += fmt.Sprintf("\n\t%v x %v, for %v each, ", it.count, it.name, prc)
 	}
 	rv += "\nThen you craft: "
 
