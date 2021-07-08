@@ -111,7 +111,6 @@ func (d *Discord) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate
 	if g == nil {
 		return
 	}
-	fmt.Printf("Got message: %v\n", m.Content)
 
 	msg := strings.TrimSpace(m.Content[3:])
 	cmds := strings.SplitN(msg, " ", 2)
@@ -176,16 +175,13 @@ func (d *Discord) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate
 			return
 		}
 
-		fmt.Printf("Command sending")
 		g.cmdc <- Command{
 			Action: Price,
 			Race:   g.Race,
 			Item:   cmds[1],
 			Out:    g.outc,
 		}
-		fmt.Printf("Command sent")
 		msg := <-g.outc
-		fmt.Printf("Result received: %v", msg)
 		utility.SendMonitored(s, &m.ChannelID, &msg)
 	case "how":
 		if !g.IsRaceSelected {

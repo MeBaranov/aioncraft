@@ -12,6 +12,7 @@ import (
 
 	"cloud.google.com/go/storage"
 
+	"github.com/google/martian/v3/log"
 	"github.com/mebaranov/aioncraft/database"
 	"github.com/mebaranov/aioncraft/input"
 	"github.com/mebaranov/aioncraft/scrapper"
@@ -44,12 +45,18 @@ func main() {
 		discToken string
 		gcsBucket string
 		cli       bool
+		verbose   bool
 	)
 
 	flag.StringVar(&discToken, "t", "", "Bot token")
 	flag.BoolVar(&cli, "cli", false, "Use CLI")
 	flag.StringVar(&gcsBucket, "b", "", "GCS Bucket")
+	flag.BoolVar(&verbose, "v", false, "Verbose logs")
 	flag.Parse()
+
+	if verbose {
+		log.SetLevel(log.Info)
+	}
 
 	if discToken == "" {
 		discToken = os.Getenv("BOT_TOKEN")
@@ -67,7 +74,7 @@ func main() {
 	if gcsBucket != "" {
 		m.client, err = storage.NewClient(context.Background())
 		if err != nil {
-			fmt.Printf("Could not create client. Error: %v", err)
+			log.Errorf("Could not create client. Error: %v", err)
 			return
 		}
 		defer m.client.Close()
@@ -77,12 +84,12 @@ func main() {
 
 	err = m.InitDatabase()
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		log.Errorf("Error: %v\n", err)
 		return
 	}
 
 	if m.db.CurState != database.Named {
-		fmt.Printf("Naming %v + %v items", len(m.db.Items[database.Elyos]), len(m.db.Items[database.Asmodian]))
+		log.Infof("Naming %v + %v items", len(m.db.Items[database.Elyos]), len(m.db.Items[database.Asmodian]))
 		m.scrap.Name(m.db.Items[database.Elyos])
 		m.scrap.Name(m.db.Items[database.Asmodian])
 		m.db.CurState = database.Named
@@ -96,8 +103,10 @@ func main() {
 	if cli {
 		controllers = append(controllers, &input.CLI{})
 	}
-	m.InitDiscord(discToken)
-	if m.discInp != nil {
+	err = m.InitDiscord(discToken)
+	if err != nil {
+		log.Errorf("Could not init discord: %v", err)
+	} else if m.discInp != nil {
 		controllers = append(controllers, m.discInp)
 	}
 	if len(controllers) == 0 {
@@ -143,7 +152,7 @@ func (m *MainStr) dbFromReader(r io.Reader) error {
 		return fmt.Errorf("Could not unmarshal database. Error: %v", err)
 	}
 
-	fmt.Printf("Info: DB loaded from file\n")
+	log.Infof("Info: DB loaded from file")
 	return nil
 }
 
@@ -158,7 +167,7 @@ func (m *MainStr) discFromReader(r io.Reader) error {
 		return fmt.Errorf("Could not unmarshal discord. Error: %v", err)
 	}
 
-	fmt.Printf("Info: Discord loaded from file\n")
+	log.Infof("Info: Discord loaded from file")
 	return nil
 }
 
@@ -166,27 +175,33 @@ func (m *MainStr) InitDatabase() error {
 	if m.bucket != nil {
 		rc, err := m.bucket.Object(dbPath).NewReader(m.ctx)
 		if err == nil {
+			log.Infof("DB initialized from GCS")
 			return m.dbFromReader(rc)
+		} else {
+			log.Errorf("DB could not be initialized from GCS: %v", err)
 		}
 	}
 
 	if file, err := os.Open(dbPath); err == nil {
 		err := m.dbFromReader(file)
 		m.db.SaveNeeded = m.bucket != nil
+		log.Infof("DB initialized from file. Write required: %v", m.db.SaveNeeded)
 		return err
+	} else {
+		log.Errorf("DB could not be initialized from file: %v", err)
 	}
 
 	m.db = database.New()
 	for t, p := range paths {
 		file, err := os.Open(p)
 		if err != nil {
-			fmt.Printf("Could not open file (%v). Error: %v", p, err)
+			log.Errorf("Could not open file (%v). Error: %v", p, err)
 			continue
 		}
 
 		data, err := ioutil.ReadAll(file)
 		if err != nil {
-			fmt.Printf("Could not read file with data (%v). Error: %v", p, err)
+			log.Errorf("Could not read file with data (%v). Error: %v", p, err)
 		}
 
 		m.scrap.Scrap(data, m.db.Items[database.Elyos], m.db.Recipes[database.Elyos][t], m.db.Items[database.Asmodian], m.db.Recipes[database.Asmodian][t])
@@ -194,7 +209,7 @@ func (m *MainStr) InitDatabase() error {
 
 	m.db.CurState = database.Scrapped
 	err := m.SaveDatabase()
-	fmt.Printf("DB scrapped and saved\n")
+	log.Infof("DB scrapped and saved\n")
 
 	return err
 }
@@ -203,17 +218,24 @@ func (m *MainStr) InitDiscord(token string) error {
 	if m.bucket != nil {
 		rc, err := m.bucket.Object(discPath).NewReader(m.ctx)
 		if err == nil {
+			log.Infof("Discord initialized from GCS")
 			return m.discFromReader(rc)
+		} else {
+			log.Errorf("Discord could not be initialized from GCS: %v", err)
 		}
 	}
 
 	if file, err := os.Open(discPath); err == nil {
 		err := m.discFromReader(file)
 		m.discInp.SaveNeeded = m.bucket != nil
+		log.Infof("Discord initialized from file. Write required: %v", m.discInp.SaveNeeded)
 		return err
+	} else {
+		log.Errorf("DB could not be initialized from file: %v", err)
 	}
 
 	if token != "" {
+		log.Infof("Discord initialized from token")
 		m.discInp = input.NewDiscord(token)
 	}
 
@@ -229,6 +251,9 @@ func (m *MainStr) SaveDatabase() error {
 	if m.bucket != nil {
 		wc := m.bucket.Object(dbPath).NewWriter(m.ctx)
 		_, err = wc.Write(data)
+		if err == nil {
+			err = wc.Close()
+		}
 	} else {
 		err = ioutil.WriteFile(dbPath, data, 0777)
 	}
@@ -249,6 +274,9 @@ func (m *MainStr) SaveDiscord() error {
 	if m.bucket != nil {
 		wc := m.bucket.Object(discPath).NewWriter(m.ctx)
 		_, err = wc.Write(data)
+		if err == nil {
+			err = wc.Close()
+		}
 	} else {
 		err = ioutil.WriteFile(discPath, data, 0777)
 	}
@@ -263,10 +291,18 @@ func (m *MainStr) SaveDiscord() error {
 func (m *MainStr) Saver() {
 	for {
 		if m.db.SaveNeeded {
-			m.SaveDatabase()
+			log.Infof("Saving Database")
+			err := m.SaveDatabase()
+			if err != nil {
+				log.Errorf("Could not save database: %v", err)
+			}
 		}
 		if m.discInp != nil && m.discInp.SaveNeeded {
-			m.SaveDiscord()
+			log.Infof("Saving discord")
+			err := m.SaveDiscord()
+			if err != nil {
+				log.Errorf("Could not save discord: %v", err)
+			}
 		}
 		time.Sleep(time.Second * 30)
 	}
