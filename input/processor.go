@@ -35,10 +35,14 @@ func (p *Processor) Work(inputs []InputController) {
 	for i := 0; i < length; i++ {
 		outChans[i] = make(chan string, 15)
 		go inputs[i].Start(cmdChan, outChans[i])
+		fmt.Printf("Stuff is running?")
 	}
 
+	fmt.Printf("it is")
 	for {
+		fmt.Printf("Waiting for command\n")
 		cmd := <-cmdChan
+		fmt.Printf("Command received: %v\n", cmd)
 		switch cmd.Action {
 		case Close:
 			cmd.Out <- "Ok. Bye bye."

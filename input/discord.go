@@ -64,12 +64,17 @@ func (d *Discord) Start(cmdc chan Command, outc chan string) {
 
 	d.s.AddHandler(d.ready)
 	d.s.AddHandler(d.guildCreate)
+	d.s.AddHandler(d.messageCreate)
+	err = d.s.Open()
+	if err != nil {
+		panic(err)
+	}
 
 	select {
 	case <-d.readyChan:
 		fmt.Println("Bot connected sucessfully")
 	case <-time.After(timeout):
-		panic("Bot could not connect in time")
+		panic("Bot could not connect in time with token: " + d.Token)
 	}
 }
 
@@ -90,6 +95,8 @@ func (d *Discord) guildCreate(s *discordgo.Session, r *discordgo.GuildCreate) {
 		return
 	}
 	d.Guilds[gid] = &Guild{
+		cmdc:           d.cmdc,
+		outc:           d.outc,
 		IsRaceSelected: false,
 	}
 
@@ -104,6 +111,7 @@ func (d *Discord) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate
 	if g == nil {
 		return
 	}
+	fmt.Printf("Got message: %v\n", m.Content)
 
 	msg := strings.TrimSpace(m.Content[3:])
 	cmds := strings.SplitN(msg, " ", 2)
@@ -132,7 +140,7 @@ func (d *Discord) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate
 		return
 	case "set":
 		if !g.IsRaceSelected {
-			msg := "Select the race first"
+			msg := "Select the race first (see /c help)"
 			utility.SendMonitored(s, &m.ChannelID, &msg)
 			return
 		}
@@ -163,22 +171,25 @@ func (d *Discord) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate
 		utility.SendMonitored(s, &m.ChannelID, &msg)
 	case "price":
 		if !g.IsRaceSelected {
-			msg := "Select the race first"
+			msg := "Select the race first (see /c help)"
 			utility.SendMonitored(s, &m.ChannelID, &msg)
 			return
 		}
 
+		fmt.Printf("Command sending")
 		g.cmdc <- Command{
 			Action: Price,
 			Race:   g.Race,
 			Item:   cmds[1],
 			Out:    g.outc,
 		}
+		fmt.Printf("Command sent")
 		msg := <-g.outc
+		fmt.Printf("Result received: %v", msg)
 		utility.SendMonitored(s, &m.ChannelID, &msg)
 	case "how":
 		if !g.IsRaceSelected {
-			msg := "Select the race first"
+			msg := "Select the race first (see /c help)"
 			utility.SendMonitored(s, &m.ChannelID, &msg)
 			return
 		}
@@ -194,13 +205,16 @@ func (d *Discord) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate
 	case "help":
 		msg := "" +
 			"Following commands are supported: \n" +
-			"\t'/c '" +
+			"\t'/c help - show this help\n'" +
 			"\t'/c set <item name> <price>' - set a price for an item. Exact name is required.\n" +
 			"\t'/c price <item name>' - shows a craft price estimate. You can use regular expressions for the name.\n" +
 			"\t'/c how <item name>' - shows how to craft an item. Exact name is required."
 		if !g.IsRaceSelected {
 			msg = "You should select a race using one of the following commands:\n\t'/c race Elyos' - for Elyos\n\t'/c race Asmodian' - for Asmodian.\n\n You can change the race in the future."
 		}
+
+		msg += "\n\nTo add me to your server use this link: https://discord.com/oauth2/authorize?client_id=862485931013177354&scope=bot+messages.read\n"
+		msg += "My source code is there: https://github.com/MeBaranov/aioncraft"
 		utility.SendMonitored(s, &m.ChannelID, &msg)
 	default:
 		msg := fmt.Sprintf("Command \"%v\" is not known", cmd)

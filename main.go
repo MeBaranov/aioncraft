@@ -39,6 +39,7 @@ func main() {
 
 	flag.StringVar(&discToken, "t", "", "Bot token")
 	flag.BoolVar(&cli, "cli", false, "Use CLI")
+	flag.Parse()
 
 	m := &MainStr{
 		scrap: scrapper.New(),
@@ -69,6 +70,11 @@ func main() {
 	if discToken != "" {
 		m.discInp = input.NewDiscord(discToken)
 		controllers = append(controllers, m.discInp)
+	}
+
+	if len(controllers) == 0 {
+		fmt.Println("Nothing to start. I'm out")
+		return
 	}
 	m.processor.Work(controllers)
 }
@@ -127,14 +133,14 @@ func (m *MainStr) SaveDatabase() error {
 }
 
 func (m *MainStr) SaveDiscord() error {
-	data, err := m.db.Save()
+	data, err := m.discInp.Save()
 	if err != nil {
-		return fmt.Errorf("Could not marshal DB. Error: %v", err)
+		return fmt.Errorf("Could not marshal Discord. Error: %v", err)
 	}
 
-	err = ioutil.WriteFile(dbPath, data, 0777)
+	err = ioutil.WriteFile(discPath, data, 0777)
 	if err != nil {
-		return fmt.Errorf("Could not save DB file. Error: %v", err)
+		return fmt.Errorf("Could not save Discord file. Error: %v", err)
 	}
 
 	return nil
@@ -143,11 +149,9 @@ func (m *MainStr) SaveDiscord() error {
 func (m *MainStr) Saver() {
 	for {
 		if m.db.SaveNeeded {
-			m.db.SaveNeeded = false
 			m.SaveDatabase()
 		}
 		if m.discInp != nil && m.discInp.SaveNeeded {
-			m.discInp.SaveNeeded = false
 			m.SaveDiscord()
 		}
 		time.Sleep(time.Second * 30)
