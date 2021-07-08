@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"os"
 	"time"
 
@@ -104,8 +105,31 @@ func main() {
 		return
 	}
 
+	port := os.Getenv("PORT")
+	if port != "nil" {
+		go m.listen(port)
+	}
+
 	go m.Saver()
 	m.processor.Work(controllers)
+}
+
+func (m *MainStr) listen(port string) {
+	l, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		fmt.Println("Error listening:", err.Error())
+		os.Exit(1)
+	}
+	// Close the listener when the application closes.
+	defer l.Close()
+	fmt.Println("Listening on " + ":" + port)
+	for {
+		// Listen for an incoming connection.
+		_, err := l.Accept()
+		if err != nil {
+			fmt.Println("Error accepting: ", err.Error())
+		}
+	}
 }
 
 func (m *MainStr) dbFromReader(r io.Reader) error {
