@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/google/martian/v3/log"
 	"github.com/mebaranov/aioncraft/database"
 	"github.com/mebaranov/aioncraft/utility"
 )
@@ -72,7 +73,7 @@ func (d *Discord) Start(cmdc chan Command, outc chan string) {
 
 	select {
 	case <-d.readyChan:
-		fmt.Println("Bot connected sucessfully")
+		log.Infof("Bot connected sucessfully")
 	case <-time.After(timeout):
 		panic("Bot could not connect in time with token: " + d.Token)
 	}
@@ -100,7 +101,7 @@ func (d *Discord) guildCreate(s *discordgo.Session, r *discordgo.GuildCreate) {
 		IsRaceSelected: false,
 	}
 
-	fmt.Printf("Added guild with ID: %v, Name: %v\n", r.Guild.ID, r.Guild.Name)
+	log.Infof("Added guild with ID: %v, Name: %v\n", r.Guild.ID, r.Guild.Name)
 }
 
 func (d *Discord) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {

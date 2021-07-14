@@ -84,11 +84,17 @@ func (d *Database) Save() ([]byte, error) {
 
 func (d *Database) RecipeByItem(race Race, ct CraftType, itemId string) *Recipe {
 	recipes := d.Recipes[race][ct]
+	var possibleRv *Recipe
 	for _, r := range recipes {
-		if r.ItemID == itemId && r.Count == 1 {
-			return r
+		if r.ItemID == itemId {
+			if r.Count == 1 {
+				return r
+			}
+			if possibleRv == nil || possibleRv.Count > r.Count {
+				possibleRv = r
+			}
 		}
 	}
 
-	return nil
+	return possibleRv
 }

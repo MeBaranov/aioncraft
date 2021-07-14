@@ -110,7 +110,7 @@ func main() {
 		controllers = append(controllers, m.discInp)
 	}
 	if len(controllers) == 0 {
-		fmt.Println("Nothing to start. I'm out")
+		log.Errorf("Nothing to start. I'm out")
 		return
 	}
 
@@ -126,17 +126,17 @@ func main() {
 func (m *MainStr) listen(port string) {
 	l, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		fmt.Println("Error listening:", err.Error())
+		log.Errorf("Error listening:", err.Error())
 		os.Exit(1)
 	}
 	// Close the listener when the application closes.
 	defer l.Close()
-	fmt.Println("Listening on " + ":" + port)
+	log.Infof("Listening on " + ":" + port)
 	for {
 		// Listen for an incoming connection.
 		_, err := l.Accept()
 		if err != nil {
-			fmt.Println("Error accepting: ", err.Error())
+			log.Errorf("Error accepting: ", err.Error())
 		}
 	}
 }

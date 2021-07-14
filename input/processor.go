@@ -62,7 +62,7 @@ func (p *Processor) Set(cmd Command) string {
 			it.Price.Value = cmd.Price
 			p.db.SaveNeeded = true
 
-			return fmt.Sprintf("Price (%v) successfully set for item %v (%v)", it.Price, it.Name, it.ID)
+			return fmt.Sprintf("Price (%v) successfully set for item %v (%v)", it.Price.Value, it.Name, it.ID)
 		}
 	}
 
@@ -83,14 +83,15 @@ func (p *Processor) Price(cmd Command) string {
 
 	for _, item := range items {
 		if regEx.MatchString(strings.ToLower(item.Name)) {
-			for ct, name := range CraftTypeToName {
+			found := false
+			for ct, ctName := range CraftTypeToName {
 				rec := p.db.RecipeByItem(cmd.Race, ct, item.ID)
 				if rec == nil {
 					continue
 				}
-				price := p.priceByRecipe(cmd.Race, ct, rec.ID)
+				price := p.priceByRecipe(cmd.Race, ct, rec.ID, true)
 
-				tmpstr := fmt.Sprintf("Type: %v (Level %v), Item: %v (%v), Price: %v", name, rec.Level, item.Name, item.ID, price.Value)
+				tmpstr := fmt.Sprintf("Type: %v (Level %v), Item: %v (x%v), Price: %v", ctName, rec.Level, item.Name, rec.Count, price.Value)
 				if len(price.NAReasons) > 0 {
 					tmpstr += " + <N/A>."
 					for _, na := range price.NAReasons {
@@ -98,7 +99,17 @@ func (p *Processor) Price(cmd Command) string {
 					}
 				}
 				tmpstr += "\n"
-				rvs = append(rvs, &helpStruct{tmpstr, rec.Level})
+				rvs = append(rvs, &helpStruct{tmpstr, rec.Level + int(ct)*1000})
+				found = true
+			}
+
+			if !found {
+				str := fmt.Sprintf("Type: Base item, Item: %v, Price: %v", item.Name, item.Price.Value)
+				if len(item.Price.NAReasons) != 0 {
+					str += " (<N/A>)."
+				}
+				str += "\n"
+				rvs = append(rvs, &helpStruct{str, -1})
 			}
 		}
 	}
@@ -113,7 +124,7 @@ func (p *Processor) Price(cmd Command) string {
 			rv += s.str
 		}
 		if len(naReasons) != 0 {
-			rv += "\n\nYou can improve estimation quality and get rid of <N/A>'s by adding the following prices:\n"
+			rv += "\n\nYou can improve estimation quality and get rid of '<N/A>'s by adding the following prices:\n"
 			for i := range naReasons {
 				rv += i + ","
 			}
@@ -135,7 +146,7 @@ func (p *Processor) Help(cmd Command) string {
 					continue
 				}
 				help := p.gatherIngridients(cmd.Race, ct, rec.ID)
-				rv += fmt.Sprintf("Type: %v (Level %v), Item: %v, Manual:\n%v", name, rec.Level, item.Name, help)
+				rv += fmt.Sprintf("Type: %v (Level %v), Item: %v (x%v), Manual:\n%v", name, rec.Level, item.Name, rec.Count, help)
 				rv += "==========================\n"
 			}
 		}
@@ -166,7 +177,7 @@ func (p *Processor) gatherIngridients(race database.Race, ct database.CraftType,
 	queue := []*queueItem{{inRecId, 1}}
 	baseItems := map[string]*itemAndCount{}
 	crafts := map[string]*itemAndCount{
-		item.ID: {item.Name, 1, 0, nil},
+		item.ID: {item.Name, rec.Count, 0, nil},
 	}
 
 	layer := 0
@@ -228,9 +239,10 @@ func (p *Processor) gatherIngridients(race database.Race, ct database.CraftType,
 	return rv
 }
 
-func (p *Processor) priceByRecipe(race database.Race, ct database.CraftType, id string) *utility.TheInt {
+func (p *Processor) priceByRecipe(race database.Race, ct database.CraftType, id string, ignoreCount bool) *utility.TheInt {
 	similarRecs := p.db.Recipes[race][ct]
 	rec := similarRecs[id]
+	mainRec := rec
 	rv := &utility.TheInt{Value: 0}
 
 	for item, count := range rec.Items {
@@ -241,10 +253,14 @@ func (p *Processor) priceByRecipe(race database.Race, ct database.CraftType, id 
 			it := p.db.Items[race][item]
 			recPrice = it.Price
 		} else {
-			recPrice = p.priceByRecipe(race, ct, rec.ID)
+			recPrice = p.priceByRecipe(race, ct, rec.ID, false)
 		}
 
-		rv = rv.Plus(recPrice.Mul(count))
+		curPrice := recPrice.Mul(count)
+		if !ignoreCount {
+			curPrice = curPrice.Div(mainRec.Count)
+		}
+		rv = rv.Plus(curPrice)
 	}
 
 	return rv

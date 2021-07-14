@@ -1,5 +1,7 @@
 package utility
 
+import "github.com/google/martian/v3/log"
+
 type TheInt struct {
 	Value     int
 	NAReasons []string
@@ -22,6 +24,17 @@ func (a *TheInt) Plus(b *TheInt) *TheInt {
 func (a *TheInt) Mul(b int) *TheInt {
 	return &TheInt{
 		Value:     a.Value * b,
+		NAReasons: append([]string(nil), a.NAReasons...),
+	}
+}
+
+func (a *TheInt) Div(b int) *TheInt {
+	if b == 0 {
+		log.Errorf("division by zero")
+		return &TheInt{0, []string{""}}
+	}
+	return &TheInt{
+		Value:     a.Value / b,
 		NAReasons: append([]string(nil), a.NAReasons...),
 	}
 }
